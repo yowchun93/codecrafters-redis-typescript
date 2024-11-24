@@ -1,19 +1,36 @@
 import * as net from "net";
 
-// You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 
-// Uncomment this block to pass the first stage
+const storage: { [key: string]: string } = {};
+
 const server: net.Server = net.createServer((connection: net.Socket) => {
   connection.on("data", (chunk: Buffer) => {
     const data = chunk.toString();
 
-    const [echo, command, ...rest] = parseResponse(data);
+    const [command, key, value] = parseResponse(data);
 
-    if (echo === "ECHO") {
-      connection.write(`+${command}\r\n`);
-    } else {
-      connection.write(`+PONG\r\n`);
+    switch (command) {
+      case "PING":
+        connection.write("+PONG\r\n");
+        break;
+      case "ECHO":
+        connection.write(`+${key}\r\n`);
+        break;
+      case "SET":
+        storage[key] = value;
+        connection.write("+OK\r\n");
+        break;
+      case "GET":
+        if (storage[key] !== undefined) {
+          connection.write(`+${storage[key]}\r\n`);
+        } else {
+          connection.write("$-1\r\n"); // RESP null bulk string
+        }
+        break;
+      default:
+        connection.write("-ERR unknown command\r\n");
+        break;
     }
 
     // calling this without connection.end
