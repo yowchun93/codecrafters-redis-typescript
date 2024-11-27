@@ -1,14 +1,14 @@
 import * as net from "net";
 
-console.log("Logs from your program will appear here!");
-
-const storage: { [key: string]: string } = {};
+type StorageEntry = { value: string; expiresAt: number | null };
+// const storage: { [key: string]: string } = {};
+const storage: { [key: string]: StorageEntry } = {};
 
 const server: net.Server = net.createServer((connection: net.Socket) => {
   connection.on("data", (chunk: Buffer) => {
     const data = chunk.toString();
 
-    const [command, key, value] = parseResponse(data);
+    const [command, key, value, expires, expiryTime] = parseResponse(data);
 
     switch (command) {
       case "PING":
@@ -18,12 +18,23 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         connection.write(`+${key}\r\n`);
         break;
       case "SET":
-        storage[key] = value;
+        storage[key] = {
+          value: value,
+          expiresAt: expires ? Date.now() + parseInt(expiryTime, 10) : null
+        };
+
+        console.log(`Expires at is: ${storage[key].expiresAt}`)
+
         connection.write("+OK\r\n");
         break;
       case "GET":
         if (storage[key] !== undefined) {
-          connection.write(`+${storage[key]}\r\n`);
+          if (storage[key].expiresAt !== null && Date.now() >= storage[key].expiresAt) {
+            delete storage[key];
+            connection.write("$-1\r\n"); // RESP null bulk string
+          } else {
+            connection.write(`+${storage[key].value}\r\n`);
+          }
         } else {
           connection.write("$-1\r\n"); // RESP null bulk string
         }
