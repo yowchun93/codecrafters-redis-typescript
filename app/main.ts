@@ -1,5 +1,22 @@
 import * as net from "net";
 
+// TS version so much more concise
+
+// RedisConfig
+const args = {
+  dir: '/tmp/redis-files',
+  dbfilename: 'dump.rdb',
+};
+
+process.argv.forEach((arg, index) => {
+  if (arg === '--dir' && process.argv[index + 1]) {
+    args.dir = process.argv[index + 1];
+  }
+  if (arg === '--dbfilename' && process.argv[index + 1]) {
+    args.dbfilename = process.argv[index + 1];
+  }
+});
+
 type StorageEntry = { value: string; expiresAt: number | null };
 // const storage: { [key: string]: string } = {};
 const storage: { [key: string]: StorageEntry } = {};
@@ -8,14 +25,15 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
   connection.on("data", (chunk: Buffer) => {
     const data = chunk.toString();
 
+    // redis-cli CONFIG GET dir
     const [command, key, value, expires, expiryTime] = parseResponse(data);
 
     switch (command) {
       case "PING":
-        connection.write("+PONG\r\n");
+        connection.write(simpleString("PONG"));
         break;
       case "ECHO":
-        connection.write(`+${key}\r\n`);
+        connection.write(simpleString(key));
         break;
       case "SET":
         storage[key] = {
@@ -39,20 +57,24 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           connection.write("$-1\r\n"); // RESP null bulk string
         }
         break;
+      case "CONFIG":
+        // CONFIG GET dir
+        // return "dir", "/tmp/redis-data"
+        connection.write(`*2\r\n$3\r\ndir\r\n$${args.dir.length}\r\n${args.dir}\r\n`);
+        break;
       default:
         connection.write("-ERR unknown command\r\n");
         break;
     }
-
-    // calling this without connection.end
   });
-  // need to split the data
 });
 
+// write a test for this
 const parseResponse = (input: string): any => {
   const tokens = input.split("\r\n"); // Split input by RESP's line endings
   let index = 0;
 
+  // this code here can be more readable as well
   const parse = (): any => {
     const token = tokens[index++];
     if (!token) return null;
@@ -82,5 +104,12 @@ const parseResponse = (input: string): any => {
   return parse();
 }
 
+function simpleString(str: string): string {
+  return `+${str}\r\n`;
+}
+
+function parseArgs(args: string[]): RedisConfig {
+
+}
 
 server.listen(6379, "127.0.0.1");
