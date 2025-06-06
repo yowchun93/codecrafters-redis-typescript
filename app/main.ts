@@ -1,5 +1,6 @@
 import * as net from "net";
-
+import * as fs from "fs";
+import * as path from "path";
 // TS version so much more concise
 
 // RedisConfig
@@ -20,6 +21,9 @@ process.argv.forEach((arg, index) => {
 type StorageEntry = { value: string; expiresAt: number | null };
 // const storage: { [key: string]: string } = {};
 const storage: { [key: string]: StorageEntry } = {};
+
+// RDB persistence
+
 
 const server: net.Server = net.createServer((connection: net.Socket) => {
   connection.on("data", (chunk: Buffer) => {
@@ -61,6 +65,28 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         // CONFIG GET dir
         // return "dir", "/tmp/redis-data"
         connection.write(`*2\r\n$3\r\ndir\r\n$${args.dir.length}\r\n${args.dir}\r\n`);
+        break;
+      case "KEYS":
+        const dbFilePath = path.join(args.dir, args.dbfilename)
+
+        if(fs.existsSync(dbFilePath)) {
+          const dbFile = fs.readFileSync(dbFilePath);
+          const fileString = dbFile.toString('hex');
+
+          // naive parsing?
+          const keys = fileString.slice(fileString.indexOf('fe'));
+          const values = keys.slice(keys.indexOf('fb') + 8, keys.indexOf('ff'));
+          const keySize = parseInt(values.slice(0,2), 16);
+          const key = Buffer.from(values.slice(2, 2 + keySize * 2), 'hex').toString();
+
+          const keysArray = [key]; // currently just one key
+          const response = encodeArray(keysArray.map(k => encodeBulkString(k)));
+
+          connection.write(response);
+        } else{
+          connection.write(encodeBulkString(null));
+        }
+
         break;
       default:
         connection.write("-ERR unknown command\r\n");
@@ -108,6 +134,19 @@ function simpleString(str: string): string {
   return `+${str}\r\n`;
 }
 
+function encodeBulkString(str: string | null): string {
+  if (str === null) {
+    return `$-1\r\n`;
+  }
+  return `$${Buffer.byteLength(str)}\r\n${str}\r\n`;
+}
+
+
+function encodeArray(items: string[]): string {
+  return `*${items.length}\r\n` + items.join('');
+}
+
+// let's use this one
 function parseArgs(args: string[]): RedisConfig {
 
 }
